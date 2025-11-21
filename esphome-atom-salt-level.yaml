@@ -1,0 +1,149 @@
+substitutions:
+  friendly_name: "esphome-atom-salt-level"
+  friendly_devicename: "esphome-atom-salt-level"
+  tof_distance_offset: 130
+  tof_distance_range: 320
+  
+external_components:
+  - source: github://mrtoy-me/esphome-vl53l1x@main
+    components: [ vl53l1x ]
+    refresh: 0s
+
+esphome:
+  name: $friendly_name
+  friendly_name: $friendly_name
+  on_boot:
+    priority: 601
+    then:
+      - light.turn_on:
+          id: atom_s3_led
+          red: 1.0
+          green: 0.0
+          blue: 0.0
+          brightness: 100%      
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+  variant: ESP32S3
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "YOUR_ENCRYPTION_KEY"
+
+ota:
+  - platform: esphome
+    password: "YOUR_OTA_PASSWORD"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+captive_portal:
+
+i2c:
+    sda: 2
+    scl: 1
+    scan: true
+
+sensor:
+  - platform: vl53l1x
+    distance_mode: long
+    distance:
+      name: Raw Distance
+      id: raw_distance
+    range_status:
+      name: Range Status
+      id: range_status
+    update_interval: 60s
+
+  - platform: template
+    name: Salt Level
+    id: salt_level
+    state_class: "measurement"
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    filters:
+      - clamp:
+          min_value: 0
+          max_value: 100
+      - filter_out:
+        - NAN
+      - sliding_window_moving_average:
+          window_size: 10
+          send_every: 10
+          send_first_at: 10
+    lambda: |-
+       if (id(range_status).state > 0) {
+         return NAN;
+       } else {
+        float distance = id(raw_distance).state - $tof_distance_offset;
+        return  distance > $tof_distance_range ? 0 :  100.0 * ($tof_distance_range - distance) / $tof_distance_range;
+       }
+    update_interval: 60s
+  ## WiFi
+  - platform: wifi_signal
+    name: WiFi Signal Strength
+    id: wifi_signal_sensor
+    update_interval: 120s
+
+light:
+  - platform: status_led
+    name: "status led"
+    output: statusoutput
+  - platform: esp32_rmt_led_strip
+    id: atom_s3_led
+    rgb_order: GRB
+    pin: GPIO35
+    num_leds: 1
+    chipset: ws2812
+    name: "LED"
+    initial_state:
+      state: true
+      red: 1.0
+      green: 0.0
+      blue: 0.0
+      brightness: 100%      
+
+output:
+  - platform: template
+    id: statusoutput
+    type: binary
+    write_action:
+      - if:
+          condition:
+             lambda: return state > 0;
+          then:
+            - light.turn_on: 
+                id: atom_s3_led
+                red: 1.0
+                green: 0.0
+                blue: 0.0
+                brightness: 100%
+          else:
+            - light.turn_on: 
+                id: atom_s3_led
+                green: 1.0
+                red: 0.0
+                blue: 0.0
+                brightness: 100%
+
+binary_sensor:
+  - platform: gpio
+    id: atom_s3_button
+    pin:
+      number: GPIO41
+      mode:
+        input: true
+        pullup: true
+    name: "Button"
+    filters:
+      - invert:
+
+
+    
